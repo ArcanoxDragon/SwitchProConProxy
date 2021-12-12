@@ -1,0 +1,4 @@
+cli_ui==0.15.2
+evdev==1.4.0
+nxbt==0.1.4
+pexpect==4.8.0

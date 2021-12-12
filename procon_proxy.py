@@ -2,8 +2,9 @@ import cli_ui as ui
 import re
 import time
 
-from ControllerManager import *
 from concurrent.futures import *
+
+from ControllerManager import ControllerManager
 
 cm = ControllerManager()
 
@@ -73,17 +74,21 @@ def promptForController():
 
 
 if __name__ == "__main__":
-    controller = promptForController()
+    controllerDevice = promptForController()
 
-    if not controller:
+    if not controllerDevice:
         exit(0)
 
-    print("Connecting to \"%s\" (%s) (press L+R)..." % (controller["name"], controller["mac_address"]), end="", flush=True)
+    print("Connecting to \"%s\" (%s) (press L+R)..." % (controllerDevice["name"], controllerDevice["mac_address"]), end="", flush=True)
 
-    if not cm.connectController(controller):
+    if not cm.connectController(controllerDevice):
         print()
         raise ConnectionError("Could not connect to the selected controller")
 
     print("Connected!")
 
-    # TODO: Do controllery stuffs
+    try:
+        pass # TODO: Proxy
+    except:
+        pass # TODO: Cleanup
+        raise

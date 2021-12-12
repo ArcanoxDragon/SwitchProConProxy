@@ -41,5 +41,3 @@ class ControllerManager:
                 return True
 
         return False
-
-__all__ = ["ControllerManager"]
