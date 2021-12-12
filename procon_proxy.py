@@ -1,94 +1,58 @@
-import cli_ui as ui
-import re
-import time
+import os
 
 from concurrent.futures import *
+from time import sleep
 
-from ControllerManager import ControllerManager
-
-cm = ControllerManager()
-
-def formatControllerChoice(choice):
-    if isinstance(choice, str):
-        return choice
-
-    return "%s (%s)" % (choice["name"], choice["mac_address"])
-
-def pairNewController(scanTime=8):
-    with ThreadPoolExecutor() as exec:
-        controllerToPair = None
-
-        while not controllerToPair:
-            ui.info_progress("Scanning for new devices...", 0, scanTime)
-            startTime = time.time()
-            scanFuture = exec.submit(cm.discoverControllers, scanTime=scanTime)
-
-            while scanFuture.running():
-                curTime = time.time()
-                elapsed = min(scanTime, curTime - startTime)
-                ui.info_progress("Scanning for new devices...", elapsed, scanTime)
-                time.sleep(0.25)
-
-            newControllers = [controller for controller in scanFuture.result() if not re.match(r"^(RSSI|TxPower):", controller["name"])]
-            choices = newControllers + ["Scan again", "Cancel", "Exit"]
-            chosen = ui.ask_choice("Select a controller to pair with:", choices=choices, func_desc=formatControllerChoice, sort=False)
-
-            if chosen == "Exit":
-                exit(0)
-            elif chosen == "Cancel":
-                return None
-            elif chosen == "Scan again":
-                continue
-            else:
-                controllerToPair = chosen
-
-        print("Pairing with \"%s\" (%s)..." % (controllerToPair["name"], controllerToPair["mac_address"]), end="", flush=True)
-
-        if not cm.pairController(controllerToPair):
-            print()
-            raise ConnectionError("Could not pair with the selected controller")
-
-        print("Pairing successful!")
-        return controllerToPair
-
-
-def promptForController():
-    chosenController = None
-    pairedControllers = cm.getPairedControllers()
-    choices = pairedControllers + ["Pair new controller", "Exit"]
-
-    while not chosenController:
-        chosen = ui.ask_choice("Select a controller to use:", choices=choices, func_desc=formatControllerChoice, sort=False)
-
-        if chosen == "Exit":
-            exit(0)
-        elif chosen == "Pair new controller":
-            chosenController = pairNewController()
-
-            if not chosenController:
-                print("No controller was paired.")
-        else:
-            chosenController = chosen
-
-    return chosenController
-
+from Controller import Controller
+from ControllerProxy import ControllerProxy
+from ProconDriver import ProconDriver
 
 if __name__ == "__main__":
-    controllerDevice = promptForController()
+    # Set process priority first
+    os.nice(-15)
 
-    if not controllerDevice:
-        exit(0)
+    print("Opening input driver for Pro Controller...")
 
-    print("Connecting to \"%s\" (%s) (press L+R)..." % (controllerDevice["name"], controllerDevice["mac_address"]), end="", flush=True)
+    proconDriver = ProconDriver()
 
-    if not cm.connectController(controllerDevice):
-        print()
-        raise ConnectionError("Could not connect to the selected controller")
+    if proconDriver.needsCalibration:
+        print(
+            "The connected Pro Controller must be calibrated. Move both sticks slowly in a circle " +
+            "(one at a time), and press the \"Share\" button when done.")
 
-    print("Connected!")
+        if not proconDriver.calibrate():
+            print("Calibration was not successful. Please run the program again.")
+            exit(1)
+
+    controller = Controller()
+    proxy: ControllerProxy = None
+    print("Pro Controller ready!")
 
     try:
-        pass # TODO: Proxy
-    except:
-        pass # TODO: Cleanup
-        raise
+        proxy = ControllerProxy(controller)
+        proxy.startProcessing()
+
+        print(
+            "Now searching for a Nintendo Switch! If this is your first time connecting the " +
+            "emulated controller to your Switch, make sure your Switch is at the \"Change Grip/Order\" " +
+            "screen.")
+        proxy.connect()
+        print("Successfully connected to Nintendo Switch! Press Ctrl+C to exit.")
+
+        while True:
+            proxy.checkConnection()
+
+            if proxy.crashed:
+                print("The controller proxy crashed! Please run the program again.")
+                exit(1)
+
+            sleep(1)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if proxy:
+            try: # Hide exceptions while we clean up
+                print("Disconnecting from Nintendo Switch...")
+                proxy.close()
+            except:
+                pass
